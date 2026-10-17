@@ -147,6 +147,10 @@ Ouvrir dans **Android Studio** et lancer sur un appareil ou émulateur (API 23+)
 L'APK de démo est disponible ici : [`app-debug.apk`](./app-debug.apk)
 
 ---
+## Travaux précédents
+
+Audit de sécurité mobile réalisé dans le cadre de ma formation (analyse statique et dynamique, référentiel OWASP MASVS) :
+[Rapport d'audit (PDF)](https://drive.google.com/file/d/1oetM2hPRpeBw6k8gNYyZDfFzPYqC7EOl/view?usp=sharing)
 
 ## Auteur
 
