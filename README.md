@@ -139,7 +139,7 @@ implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
 ## Installation
 
 ```bash
-git clone https://github.com/wissal555/mini-projet-app_LeanMassCalculator.git
+git clone https://github.com/wissal555/LeanMass-MASVS-Hardened.git
 ```
 
 Ouvrir dans **Android Studio** et lancer sur un appareil ou émulateur (API 23+).
