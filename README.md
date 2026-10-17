@@ -98,7 +98,7 @@ Le détail des constats, de leur impact et de leur criticité se trouve dans le 
 | V1 | Session (`userId`, `username`) stockée en clair dans les SharedPreferences | MASVS-STORAGE-1 | Haute | Oui : `EncryptedSharedPreferences` (`SessionManager`) |
 | V2 | Base Room (`lbm-db`) non chiffrée, données de santé en clair | MASVS-CRYPTO-1 | Haute | Oui : SQLCipher + `KeyManager` |
 | V3 | Mot de passe : 6 caractères minimum, aucun contrôle de complexité, pas de verrouillage côté application | MASVS-AUTH-1 | Moyenne | Oui : `PasswordPolicy` ; verrouillage assuré côté serveur par Firebase |
-| V4 | Clé API Firebase en clair dans `google-services.json`, versionné dans le dépôt | MASVS-NETWORK-1 | Moyenne | Non : documenté (dépend de la configuration Firebase) |
+| V4 | Clé API Firebase en clair dans `google-services.json`, extractible de l'APK | MASVS-NETWORK-1 | Moyenne | Non : documenté (dépend de la configuration Firebase) |
 | V5 | `e.printStackTrace()` dans `ConfigManager` et `FirebaseManager` | MASVS-CODE-1 | Faible | Non : documenté |
 
 ---
@@ -198,7 +198,7 @@ Le durcissement ne couvre pas l'ensemble du MASVS. État par catégorie (MASVS v
 ### Pistes d'amélioration
 
 - Corriger V5 : supprimer les `printStackTrace()` ou les conditionner à `BuildConfig.DEBUG`.
-- Corriger V4 : restreindre la clé API Firebase (package et empreinte SHA-1) et vérifier les règles Firestore ; retirer `google-services.json` du dépôt public.
+- Corriger V4 : restreindre la clé API Firebase (package et empreinte SHA-1) et vérifier les règles Firestore.
 - Passer `allowBackup` à `false` et fournir un APK release signé, avec `debuggable=false`.
 - Activer R8 (obfuscation et réduction du code).
 - Générer la clé de base avec `SecureRandom` (256 bits).
@@ -207,13 +207,14 @@ Le durcissement ne couvre pas l'ensemble du MASVS. État par catégorie (MASVS v
 
 ## Installation
 
+Ce dépôt contient l'APK de démonstration, pas le code source.
+
+1. Télécharger [`app-debug.apk`](./app-debug.apk).
+2. L'installer sur un appareil ou un émulateur Android (API 24+) :
+
 ```bash
-git clone https://github.com/wissal555/LeanMass-MASVS-Hardened.git
+adb install app-debug.apk
 ```
-
-Ouvrir le projet dans **Android Studio**, puis le lancer sur un appareil ou un émulateur (API 24+).
-
-APK de démonstration : [`app-debug.apk`](./app-debug.apk)
 
 ---
 
