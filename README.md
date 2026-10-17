@@ -1,20 +1,49 @@
-
 # LeanMass Calculator
 
-Application Android de calcul de la **masse maigre corporelle (LBM)**, développée dans le cadre d'un mini-projet d'audit de sécurité mobile. L'objectif est de concevoir une application fonctionnelle tout en appliquant les bonnes pratiques de sécurité Android.
+Application Android de calcul de la **masse maigre corporelle (LBM)**, développée en Kotlin dans le cadre du module Développement Mobile, puis auditée et sécurisée dans le cadre d'un mini-projet de sécurité mobile (ENSA Agadir, filière Sécurité IT et Confiance Numérique, 2025-2026, encadré par Pr. Amrani).
+
+Le projet a été mené en **trois temps** : développer l'application, l'auditer selon l'OWASP MASVS, puis corriger les vulnérabilités les plus critiques. Cette version est **durcie sur un périmètre précis** (stockage local, cryptographie, authentification) : voir [Couverture MASVS](#couverture-masvs).
+
+---
+
+## Démarche
+
+| Phase | Objectif | Résultat |
+|---|---|---|
+| 1. Développement | Concevoir une application fonctionnelle (calcul, authentification, historique) | Version initiale |
+| 2. Audit | Revue du code source selon l'OWASP MASVS | [Rapport d'audit (PDF)](https://drive.google.com/file/d/1oetM2hPRpeBw6k8gNYyZDfFzPYqC7EOl/view?usp=sharing) : 5 vulnérabilités identifiées |
+| 3. Hardening | Corriger les 3 vulnérabilités les plus critiques (V1, V2, V3) | Version durcie (ce dépôt) |
 
 ---
 
 ## Fonctionnalités
 
-- **Calcul de la masse maigre (LBM)** : saisie du poids, du taux de graisse corporelle et du genre ; affichage du résultat avec comparaison aux normes (homme ≥ 38 kg, femme ≥ 24 kg)
-- **Authentification utilisateur** : inscription (`RegisterActivity`) et connexion (`LoginActivity`) avec politique de mot de passe (`PasswordPolicy`) et validation (`ValidationResult`)
-- **Historique des calculs** : liste des résultats passés via `HistoryActivity` et `HistoryAdapter`, stockés dans la table `lbm_history`
-- **Configuration externe** : seuils de normalité chargés depuis `assets/config.json` via `ConfigManager`
+- **Calcul de la masse maigre (LBM)** avec la formule de Boer (homme et femme), et retour visuel immédiat (satisfaisant / à surveiller) par rapport aux normes (homme ≥ 38 kg, femme ≥ 24 kg).
+- **Authentification** par email et mot de passe via Firebase Authentication : inscription (`RegisterActivity`) et connexion (`LoginActivity`), avec politique de mot de passe (`PasswordPolicy`) et validation (`ValidationResult`).
+- **Historique** des calculs avec consultation (`HistoryActivity`, `HistoryAdapter`) et suppression d'une entrée.
+- **Double persistance** : base locale SQLite (Room) et base cloud Firebase Firestore.
+- **Configuration externe** : seuils de normalité chargés depuis `assets/config.json` via `ConfigManager`.
 
 ---
 
-## Architecture
+## Phase 1 : Développement
+
+### Stack technique
+
+| Composant | Technologie |
+|---|---|
+| Plateforme | Android (API 24+) |
+| Langage | Kotlin 1.9.10 |
+| Architecture | MVVM (ViewModel + LiveData) |
+| Base de données locale | Room (SQLite) |
+| Base de données cloud | Firebase Firestore |
+| Authentification | Firebase Authentication |
+| Interface | ViewBinding, CardView, RecyclerView |
+| Build | Gradle (KTS), AGP 8.2.0 |
+| Asynchronisme | Kotlinx Coroutines 1.7.3 |
+| Architectures supportées | arm64-v8a, armeabi-v7a, x86, x86_64 |
+
+### Architecture
 
 ```
 com.example.leanmasscalculator/
@@ -30,109 +59,149 @@ com.example.leanmasscalculator/
 │   └── MainViewModel          (loadHistory, deleteEntry)
 ├── data/
 │   └── local/
-│       ├── AppDatabase        (lbm-db, SQLCipher)
+│       ├── AppDatabase        (lbm-db)
 │       ├── CalculationDao
 │       └── CalculationEntity  (id, user_id, weight, lbmValue, date)
 └── util/
-    ├── SessionManager         (EncryptedSharedPreferences)
-    ├── KeyManager             (clé SQLCipher)
-    ├── ConfigManager          (chargement config.json)
+    ├── SessionManager         (session utilisateur)
+    ├── KeyManager             (clé de la base)
+    ├── ConfigManager          (chargement de config.json)
     ├── CalculatorUtil         (formule LBM)
-    ├── PasswordPolicy         (règles mot de passe)
+    ├── PasswordPolicy         (règles de mot de passe)
     └── ValidationResult       (résultats de validation)
 ```
 
----
-
-## Sécurité
-
-La sécurité est le cœur de ce projet. Deux couches de protection sont mises en place pour protéger toutes les données locales.
-
-### 1. Chiffrement des préférences : `EncryptedSharedPreferences`
-
-Les données de session et la clé de base de données sont stockées dans un fichier chiffré unique (`session_enc`), protégé par une `MasterKey` AES-256-GCM via le **Android Keystore System**.
-
-```
-session_enc  (EncryptedSharedPreferences)
-├── user_id        → SessionManager
-├── username       → SessionManager
-├── is_logged_in   → SessionManager
-└── db_pass_key    → KeyManager  (UUID aléatoire généré à l'installation)
-```
-
-- Clés chiffrées : **AES-256-SIV**
-- Valeurs chiffrées : **AES-256-GCM**
-- Clé maître : **Android Keystore**, non extractible
-
-### 2. Chiffrement de la base de données - `SQLCipher`
-
-La base de données `lbm-db` est entièrement chiffrée via SQLCipher (lib native `.so` incluse pour `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`). La clé est générée aléatoirement au premier lancement et jamais stockée en clair.
-
-### Flux de sécurité
-
-```
-Premier lancement
-└── KeyManager.getDatabaseKey()
-    └── SessionManager.getEncryptedPrefs()
-        ├── Clé présente ? → retourne la clé existante
-        └── Absente       → génère UUID → stocke chiffré → retourne la clé
-
-Ouverture DB
-└── AppDatabase (lbm-db) ← clé fournie par KeyManager
-    └── SQLCipher déchiffre la base en mémoire
-```
-
----
-
-## Stack technique
-
-| Composant | Technologie | Version |
-|---|---|---|
-| Langage | Kotlin | — |
-| UI | View Binding + Material 3 | — |
-| Architecture | MVVM (ViewModel + LiveData) | — |
-| Base de données | Room + SQLCipher | — |
-| Chiffrement prefs | AndroidX Security Crypto | — |
-| Clé maître | Android Keystore AES-256-GCM | — |
-| Auth cloud | Firebase Authentication | — |
-| Coroutines | Kotlinx Coroutines | 1.7.3 |
-| Taille APK | debug | 23.2 MB |
-| Architectures | arm64-v8a, armeabi-v7a, x86, x86_64 | — |
-
----
-
-## Dépendances principales
-
-```gradle
-// Sécurité
-implementation "androidx.security:security-crypto:1.1.0-alpha06"
-implementation "net.zetetic:android-database-sqlcipher:4.5.4"
-implementation "androidx.sqlite:sqlite-ktx:2.3.1"
-
-// Base de données
-implementation "androidx.room:room-runtime:..."
-implementation "androidx.room:room-ktx:..."
-
-// Firebase
-implementation "com.google.firebase:firebase-auth-ktx:..."
-
-// Coroutines
-implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
-```
-
----
-
-## Schéma de la base de données
+### Schéma de la base de données locale
 
 **Table `lbm_history`**
 
 | Colonne | Type | Description |
 |---|---|---|
 | `id` | INTEGER PK | Identifiant auto-incrémenté |
-| `user_id` | TEXT | Référence à l'utilisateur connecté |
+| `user_id` | TEXT | Utilisateur connecté |
 | `weight` | REAL | Poids saisi (kg) |
 | `lbmValue` | REAL | Masse maigre calculée (kg) |
 | `date` | TEXT | Date du calcul |
+
+---
+
+## Phase 2 : Audit de sécurité
+
+L'audit a été réalisé selon l'**OWASP MASVS**, par **revue du code source** de l'application avant toute modification. Cinq catégories ont été examinées : STORAGE, CRYPTO, AUTH, NETWORK et CODE.
+
+Le détail des constats, de leur impact et de leur criticité se trouve dans le [rapport d'audit (PDF)](https://drive.google.com/file/d/1oetM2hPRpeBw6k8gNYyZDfFzPYqC7EOl/view?usp=sharing).
+
+### Principaux constats
+
+| Réf. | Constat (version initiale) | Catégorie MASVS | Criticité | Traité |
+|---|---|---|---|---|
+| V1 | Session (`userId`, `username`) stockée en clair dans les SharedPreferences | MASVS-STORAGE-1 | Haute | Oui : `EncryptedSharedPreferences` (`SessionManager`) |
+| V2 | Base Room (`lbm-db`) non chiffrée, données de santé en clair | MASVS-CRYPTO-1 | Haute | Oui : SQLCipher + `KeyManager` |
+| V3 | Mot de passe : 6 caractères minimum, aucun contrôle de complexité, pas de verrouillage côté application | MASVS-AUTH-1 | Moyenne | Oui : `PasswordPolicy` ; verrouillage assuré côté serveur par Firebase |
+| V4 | Clé API Firebase en clair dans `google-services.json`, versionné dans le dépôt | MASVS-NETWORK-1 | Moyenne | Non : documenté (dépend de la configuration Firebase) |
+| V5 | `e.printStackTrace()` dans `ConfigManager` et `FirebaseManager` | MASVS-CODE-1 | Faible | Non : documenté |
+
+---
+
+## Phase 3 : Hardening
+
+Les corrections portent sur les trois vulnérabilités de plus haute criticité (V1, V2, V3). V4 et V5, de sévérité moyenne et faible, sont documentées dans le rapport mais n'ont pas été corrigées.
+
+### V1 : Chiffrement des préférences (`EncryptedSharedPreferences`)
+
+`SessionManager` a été créé pour centraliser la gestion de session. Il utilise `EncryptedSharedPreferences` (Jetpack Security) : les données sont stockées dans un fichier chiffré unique (`session_enc`), protégé par une `MasterKey` AES-256-GCM gérée par l'**Android Keystore**.
+
+```
+session_enc  (EncryptedSharedPreferences)
+├── user_id        → SessionManager
+├── username       → SessionManager
+├── is_logged_in   → SessionManager
+└── db_pass_key    → KeyManager  (UUID aléatoire généré au premier lancement)
+```
+
+- Clés chiffrées : **AES-256-SIV**
+- Valeurs chiffrées : **AES-256-GCM**
+- Clé maître : **Android Keystore**, non extractible
+
+### V2 : Chiffrement de la base de données (SQLCipher)
+
+La base `lbm-db` est entièrement chiffrée avec SQLCipher (bibliothèque native `.so` fournie pour arm64-v8a, armeabi-v7a, x86 et x86_64). La clé est générée aléatoirement au premier lancement, stockée dans les `EncryptedSharedPreferences` et jamais écrite en clair. Fichiers modifiés : `MainActivity.kt` (initialisation de Room avec la fabrique SQLCipher) et `util/KeyManager.kt` (nouveau module de gestion de la clé).
+
+```
+Premier lancement
+└── KeyManager.getDatabaseKey()
+    └── SessionManager.getEncryptedPrefs()
+        ├── Clé présente ? → retourne la clé existante
+        └── Absente       → génère un UUID → le stocke chiffré → le retourne
+
+Ouverture de la base
+└── AppDatabase (lbm-db) ← clé fournie par KeyManager
+    └── SQLCipher déchiffre la base en mémoire
+```
+
+### V3 : Politique de mot de passe
+
+`PasswordPolicy` impose 8 caractères minimum, avec au moins une majuscule, une minuscule, un chiffre et un caractère spécial (`@#!%*?&`). `RegisterActivity` utilise désormais `PasswordPolicy.validate()` à la place de la simple vérification de longueur. Le verrouillage après tentatives échouées est assuré côté serveur par Firebase Authentication.
+
+### Dépendances de sécurité
+
+```gradle
+implementation "androidx.security:security-crypto:1.1.0-alpha06"
+implementation "net.zetetic:android-database-sqlcipher:4.5.4"
+implementation "androidx.sqlite:sqlite-ktx:2.3.1"
+```
+
+### Vérification des corrections
+
+Sur un émulateur, avec un build debug :
+
+```bash
+# Le fichier de préférences ne doit pas contenir de valeurs lisibles
+adb shell run-as com.example.leanmasscalculator cat shared_prefs/session_enc.xml
+
+# La base ne doit pas s'ouvrir sans clé
+adb shell run-as com.example.leanmasscalculator ls databases/
+adb exec-out run-as com.example.leanmasscalculator cat databases/lbm-db > lbm-db
+sqlite3 lbm-db ".tables"    # doit échouer : "file is not a database"
+```
+
+---
+
+## Couverture MASVS
+
+Le durcissement ne couvre pas l'ensemble du MASVS. État par catégorie (MASVS v2) :
+
+| Catégorie | Statut | Détail |
+|---|---|---|
+| MASVS-STORAGE | Couvert | V1 corrigée : préférences chiffrées |
+| MASVS-CRYPTO | Couvert | V2 corrigée : base chiffrée, clé maître dans le Keystore ; clé de base à renforcer (voir limites) |
+| MASVS-AUTH | Partiel | V3 corrigée : politique de mot de passe ; verrouillage délégué à Firebase |
+| MASVS-NETWORK | Audité, non corrigé | V4 : clé API Firebase exposée |
+| MASVS-CODE | Audité, non corrigé | V5 : traces de débogage |
+| MASVS-PLATFORM | Hors périmètre de l'audit | |
+| MASVS-RESILIENCE | Hors périmètre de l'audit | |
+| MASVS-PRIVACY | Hors périmètre de l'audit | |
+
+---
+
+## Limites connues
+
+- **Revue de code uniquement.** L'audit s'est appuyé sur la lecture du code source ; il n'inclut pas d'analyse dynamique (trafic réseau, instrumentation).
+- **Protection au repos uniquement.** Le chiffrement protège les fichiers contre une lecture hors de l'application (appareil rooté, vol de l'appareil, extraction du stockage). Il ne protège pas contre un attaquant qui instrumente l'application à l'exécution (par exemple avec Frida) : la clé de la base peut être interceptée au moment où l'application l'utilise.
+- **Données Firestore non couvertes.** Les données synchronisées dans le cloud ne sont pas concernées par le chiffrement local ; leur protection dépend des règles de sécurité Firestore.
+- **Migration d'une base existante.** Passer d'une base Room non chiffrée à SQLCipher exige une stratégie de migration ou une réinstallation de l'application.
+- **APK de démonstration en mode debug.** `app-debug.apk` est débogable par construction. Un build release (avec `debuggable=false`) est nécessaire pour une diffusion réelle.
+- **Clé de base dérivée d'un UUID.** Environ 122 bits d'aléa : acceptable pour ce projet, mais une clé de 256 bits générée avec `SecureRandom` serait préférable.
+- **Bibliothèques à migrer.** `android-database-sqlcipher` et `androidx.security:security-crypto` sont des dépendances à surveiller : vérifier leur statut de maintenance et migrer vers leurs successeurs si nécessaire.
+- **Jetons Firebase.** Les jetons gérés par Firebase suivent leur propre mécanisme de stockage, distinct du chiffrement décrit ci-dessus.
+
+### Pistes d'amélioration
+
+- Corriger V5 : supprimer les `printStackTrace()` ou les conditionner à `BuildConfig.DEBUG`.
+- Corriger V4 : restreindre la clé API Firebase (package et empreinte SHA-1) et vérifier les règles Firestore ; retirer `google-services.json` du dépôt public.
+- Passer `allowBackup` à `false` et fournir un APK release signé, avec `debuggable=false`.
+- Activer R8 (obfuscation et réduction du code).
+- Générer la clé de base avec `SecureRandom` (256 bits).
 
 ---
 
@@ -142,17 +211,12 @@ implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
 git clone https://github.com/wissal555/LeanMass-MASVS-Hardened.git
 ```
 
-Ouvrir dans **Android Studio** et lancer sur un appareil ou émulateur (API 23+).
+Ouvrir le projet dans **Android Studio**, puis le lancer sur un appareil ou un émulateur (API 24+).
 
-L'APK de démo est disponible ici : [`app-debug.apk`](./app-debug.apk)
+APK de démonstration : [`app-debug.apk`](./app-debug.apk)
 
 ---
-## Travaux précédents
-
-Audit de sécurité mobile réalisé dans le cadre de ma formation (analyse statique et dynamique, référentiel OWASP MASVS) :
-[Rapport d'audit (PDF)](https://drive.google.com/file/d/1oetM2hPRpeBw6k8gNYyZDfFzPYqC7EOl/view?usp=sharing)
 
 ## Auteur
 
-Projet réalisé dans le cadre d'un cours de **sécurité des applications mobiles**.  
-**EZZAIRI wissal** - ENSA Agadir
+**EZZAIRI Wissal** - ENSA Agadir, filière Sécurité IT et Confiance Numérique
